@@ -126,9 +126,6 @@ def get_service_key_by_value(service_value, service_objects):
 
 
 def post_security_rule(policy_name, source_zone, destination_zone, user_source_ip, user_destination_ip, user_service_value):
-    # user_source_ip = input("Enter source IP: ")
-    # user_destination_ip = input("Enter destination IP: ")
-    # user_service_value = int(input("Enter the service value for the new rule: "))
 
     existing_rule = match_rule(rules, address_objects, service_objects, user_source_ip, user_destination_ip, user_service_value)
 
