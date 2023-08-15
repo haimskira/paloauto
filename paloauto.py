@@ -84,12 +84,17 @@ class PaloAuto:
                                         if interface_name in zone['network']['layer3']['member']:
                                             return zone['@name']
         return None
-
+    
     def find_address_object_name(self, ip):
+        print(f"Searching for address object with IP: {ip}")
         for obj in self.address_objects:
-            if 'ip-netmask' in obj and obj['ip-netmask'] == ip:
+            object_ip = obj['ip-netmask'].split('/')[0]
+            print(f"Checking address object with IP: {object_ip}")
+            print(f"Value of ip argument: {ip}")
+            if object_ip == ip:
                 return obj['@name']
         return None
+
 
     def match_rule(self, source_ip, destination_ip, user_service):
         found_policy = False
@@ -137,9 +142,10 @@ class PaloAuto:
             print(f"Rule with source IP '{user_source_ip}', destination IP '{user_destination_ip}', and matching service value '{user_service_value}' already exists:")
             print(existing_rule)
             return
-
-        source_ip_object = self.get_address_object_by_ip(user_source_ip)
-        destination_ip_object = self.get_address_object_by_ip(user_destination_ip)
+        source_ip_object = self.find_address_object_name(user_source_ip)
+        destination_ip_object = self.find_address_object_name(user_destination_ip)
+        # source_ip_object = self.get_address_object_by_ip(user_source_ip)
+        # destination_ip_object = self.get_address_object_by_ip(user_destination_ip)
 
         if source_ip_object is None:
             print(f"No address object found for source IP '{user_source_ip}'.")
@@ -194,8 +200,8 @@ class PaloAuto:
 # Example usage
 firewall_ip = '10.0.4.253'
 api_key = 'Basic cmVzdHVzZXI6QWExMjM0NTY='
-policy_name = "new_rule1"
-user_source_ip = "1.1.1.1"
+policy_name = "new_rule2"
+user_source_ip = "10.0.1.1"
 user_destination_ip = "8.8.8.8"
 user_service_value = 80
 user_application = "any"
@@ -209,9 +215,11 @@ user_application = "any"
 
 palo_auto = PaloAuto(firewall_ip, api_key)
 source_zone = palo_auto.find_zone_for_ip(user_source_ip)
+
 destination_zone = palo_auto.find_zone_for_ip(user_destination_ip)
-if destination_zone is None:
+if destination_zone or source_zone is None:
     destination_zone = "untrust"
+    source_zone = "untrust"
 found_policy = palo_auto.match_rule(user_source_ip, user_destination_ip, user_service_value)
 
 if not found_policy:
