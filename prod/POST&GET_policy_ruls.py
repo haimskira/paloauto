@@ -88,7 +88,16 @@ def find_zone_for_ip(ip, interfaces, zones):
                                         return zone['@name']
     return None
 
-# Function to match security rules based on source, destination, and service
+def find_address_object_name(ip, address_objects):
+    for obj in address_objects:
+        if 'ip-netmask' in obj and obj['ip-netmask'] == ip:
+            return obj['@name']
+    return None
+
+# ... (other code remains the same)
+
+# ... (other code remains the same)
+
 def match_rule(rules, objects, services, source_ip, destination_ip, user_service):
     found_policy = False
     for rule in rules:
@@ -98,22 +107,25 @@ def match_rule(rules, objects, services, source_ip, destination_ip, user_service
             source_members = rule['source']['member']
             destination_members = rule['destination']['member']
             service_members = rule['service']['member']
-            
+
             if source_ip in [obj['ip-netmask'] for obj in objects if '@name' in obj and obj['@name'] in source_members] and \
                 destination_ip in [obj['ip-netmask'] for obj in objects if '@name' in obj and obj['@name'] in destination_members]:
                 for service_member in service_members:
                     if any(service_member in srv['@name'] for srv in services):
+                        print(f"Rule '{rule['@name']}' contains source IP '{source_ip}', destination IP '{destination_ip}', and matches service '{user_service}'.")
                         if 'to' in rule and 'member' in rule['to'] and 'from' in rule and 'member' in rule['from']:
                             zones_to = rule['to']['member']
                             zones_from = rule['from']['member']
-                            # print(f"Source Zones: {', '.join(zones_from)}")
-                            # print(f"Destination Zones: {', '.join(zones_to)}")
+                            print(f"Source Zones: {', '.join(zones_from)}")
+                            print(f"Destination Zones: {', '.join(zones_to)}")
                         found_policy = True
                         break
 
-    if not found_policy:
-        print(f"match_rule IF not found_policy - No security rule found containing source IP '{source_ip}', destination IP '{destination_ip}', and matching service '{user_service}'.")
+    return found_policy
 
+# ... (other code remains the same)
+
+# Match the security rules
 
 def get_service_key_by_value(service_value, service_objects):
     for service in service_objects:
@@ -125,6 +137,12 @@ def get_service_key_by_value(service_value, service_objects):
     return None
 
 
+def get_address_object_by_ip(ip, address_objects):
+    for obj in address_objects:
+        if 'ip-netmask' in obj and obj['ip-netmask'] == ip:
+            return obj['@name']
+    return None
+
 def post_security_rule(policy_name, source_zone, destination_zone, user_source_ip, user_destination_ip, user_service_value):
 
     existing_rule = match_rule(rules, address_objects, service_objects, user_source_ip, user_destination_ip, user_service_value)
@@ -134,24 +152,20 @@ def post_security_rule(policy_name, source_zone, destination_zone, user_source_i
         print(existing_rule)
         return
 
+    source_ip_object = get_address_object_by_ip(user_source_ip, address_objects)
+    destination_ip_object = get_address_object_by_ip(user_destination_ip, address_objects)
 
-    # Find and print the zone for the source IP
-    source_zone = find_zone_for_ip(user_source_ip, interfaces, zones)
-    if source_zone is None:
-        print(f"post_security_rule if source_zone is None - Source IP '{user_source_ip}' is not associated with any zone.")
+    if source_ip_object is None:
+        print(f"post_security_rule if source_ip_object is None - No address object found for source IP '{user_source_ip}'.")
         return
 
-    # Find and print the zone for the destination IP
-    destination_zone = find_zone_for_ip(user_destination_ip, interfaces, zones)
-    if destination_zone is None:
+    if destination_ip_object is None:
+        print(f"post_security_rule if destination_ip_object is None - No address object found for destination IP '{user_destination_ip}'.")
+        return
 
-        destination_zone = "untrust"
-        print(f" post_security_rule if destination_zone is None - Destination IP '{user_destination_ip}' is not associated with any zone.")
-        
-        
     service_key = get_service_key_by_value(user_service_value, service_objects)
     if service_key is None:
-        print(f"post_security_rule if destination_zone is None - Service object with value '{user_service_value}' not found.")
+        print(f"post_security_rule if service_key is None - Service object with value '{user_service_value}' not found.")
         return
 
     rule_data = {
@@ -161,13 +175,16 @@ def post_security_rule(policy_name, source_zone, destination_zone, user_source_i
             "@vsys": "vsys1",
             "from": {"member": [source_zone]},
             "to": {"member": [destination_zone]},
-            "source": {"member": [user_source_ip]},
-            "destination": {"member": [user_destination_ip]},
+            "source": {"member": [source_ip_object]},
+            "destination": {"member": [destination_ip_object]},
             "service": {"member": [service_key]},
             "application": {"member": [user_application] if user_application != "any" else ["any"]},
             "action": "allow"
         }
     }
+
+    # Rest of the function remains unchanged
+
 
     print("\nNew rule details:")
     print("Rule Name:", policy_name)
@@ -193,30 +210,32 @@ def post_security_rule(policy_name, source_zone, destination_zone, user_source_i
 
 
 ######################################################################################################################################
-policy_name = input("Enter the policy name: ")
-user_source_ip = input("Enter source IP: ")
-user_destination_ip = input("Enter destination IP: ")
-user_service_value = int(input("Enter service port: "))
-user_application = input("Enter the application value for the new rule (enter 'any' if not specified): ")
+
+policy_name = "new_rule1"
+user_source_ip = "1.1.1.1"
+user_destination_ip = "8.8.8.8"
+user_service_value = 80
+user_application = "any"
+# policy_name = input("Enter the policy name: ")
+# user_source_ip = input("Enter source IP: ")
+# user_destination_ip = input("Enter destination IP: ")
+# user_service_value = int(input("Enter service port: "))
+# user_application = input("Enter the application value for the new rule (enter 'any' if not specified): ")
 
 
-# Fetch interface and zone information
+# Fetch interface and zone information  security rules, address objects, and service objects
+rules = get_security_rules()
 interfaces = get_interface_info()
 zones = get_zone_info()
-
-# Fetch security rules, address objects, and service objects
-rules = get_security_rules()
 address_objects = get_address_objects()
 service_objects = get_service_objects()
 
 # Find and print the zone for the source and destination IPs
 source_zone = find_zone_for_ip(user_source_ip, interfaces, zones)
 destination_zone = find_zone_for_ip(user_destination_ip, interfaces, zones)
-# print(f"Source IP '{user_source_ip}' is in zone '{source_zone}'")
-# print(f"Destination IP '{user_destination_ip}' is in zone '{destination_zone}'")
 
-# Match the security rules
-match_rule(rules, address_objects, service_objects, user_source_ip, user_destination_ip, user_service_value)
+found_policy = match_rule(rules, address_objects, service_objects, user_source_ip, user_destination_ip, user_service_value)
 
 # Post a new security rule if no match was found
-post_security_rule(policy_name, source_zone, destination_zone, user_source_ip, user_destination_ip, user_service_value)
+if not found_policy:
+    post_security_rule(policy_name, source_zone, destination_zone, user_source_ip, user_destination_ip, user_service_value)
