@@ -94,10 +94,6 @@ def find_address_object_name(ip, address_objects):
             return obj['@name']
     return None
 
-# ... (other code remains the same)
-
-# ... (other code remains the same)
-
 def match_rule(rules, objects, services, source_ip, destination_ip, user_service):
     found_policy = False
     for rule in rules:
@@ -122,10 +118,6 @@ def match_rule(rules, objects, services, source_ip, destination_ip, user_service
                         break
 
     return found_policy
-
-# ... (other code remains the same)
-
-# Match the security rules
 
 def get_service_key_by_value(service_value, service_objects):
     for service in service_objects:
