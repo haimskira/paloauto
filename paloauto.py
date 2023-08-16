@@ -67,8 +67,11 @@ class PaloAuto:
         else:
             print(f"Failed to fetch zone information. Status code: {zone_response.status_code}")
             return []
-
+    
     def find_zone_for_ip(self, ip):
+        # dna_gateways = self.get_dna_gateways()
+        # if any(ipaddress.IPv4Address(ip) in ipaddress.IPv4Network(gw) for gw in dna_gateways):
+        #     return "USERS"
         for interface in self.interfaces:
             if 'layer3' in interface and 'units' in interface['layer3']:
                 units = interface['layer3']['units']['entry']
@@ -77,17 +80,38 @@ class PaloAuto:
                         interface_ip = unit['ip']['entry'][0]['@name']
                         if '/' in interface_ip:
                             subnet = ipaddress.IPv4Network(interface_ip, strict=False)
+                            print(f"Comparing {ip} with subnet {subnet}")
                             if ipaddress.IPv4Address(ip) in subnet:
                                 interface_name = unit['@name']
+                                print(f"Matching IP {ip} found in interface {interface_name}")
                                 for zone in self.zones:
                                     if 'network' in zone and 'layer3' in zone['network'] and 'member' in zone['network']['layer3']:
                                         if interface_name in zone['network']['layer3']['member']:
+                                            print(f"Matching zone {zone} found in interface {interface_name}")
                                             return zone['@name']
         return None
     
+    def get_dna_gateways(self):
+        dna_gateways = []
+        auth_token = 'eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI2MGVjNGU0ZjRjYTdmOTIyMmM4MmRhNjYiLCJhdXRoU291cmNlIjoiaW50ZXJuYWwiLCJ0ZW5hbnROYW1lIjoiVE5UMCIsInJvbGVzIjpbIjVlOGU4OTZlNGQ0YWRkMDBjYTJiNjQ4ZSJdLCJ0ZW5hbnRJZCI6IjVlOGU4OTZlNGQ0YWRkMDBjYTJiNjQ4NyIsImV4cCI6MTY5MjIwODc2NywiaWF0IjoxNjkyMjA1MTY3LCJqdGkiOiI0NzgyN2YyZS05YzQwLTQ0MGItYjhiNi02YmFlZDc4YjY0ODkiLCJ1c2VybmFtZSI6ImRldm5ldHVzZXIifQ.QWQlScGLSkRzdJvbG5ygk4xYaSLccY6Hw4r7adP1ESFfLJZZzkt335punV5-H3u7LNbkLTYn-HhU4PaFhp3mO0i79__MGosHWDkRGfVv74q22kaGYuU33OAICXHt_RW1EPNlAh68_halN6M4wj8OlYEMq--LPU1ESMHV2et0FT_S2yq6aUODhz9UM9-CxLznza3toeG658I3UWiPgoizPPj3T_2gFGVVPS30loYOzNWE1KMDMi22h-u6bMgXvjIRUU0VolqdvUYNdaQjZ7y3mxuKido0Gog43AvgqrXnBP2Jjifu46EkS8cnXpeWHcs8O9FsHOSjArveRkHSrEFx2Q'
+        url = 'https://sandboxdnac.cisco.com/dna/intent/api/v1/global-pool'
+        response = requests.get(url, headers={'X-Auth-Token': auth_token}, verify=False)
+
+        if response.status_code == 200:
+            global_pools = response.json().get('response', [])
+            for pool in global_pools:
+                gateways = pool.get('gateways', [])
+                dna_gateways.extend(gateways)
+                print(gateways)
+        else:
+            print(f"Failed to fetch DNA gateways. Status code: {response.status_code}")
+
+        return dna_gateways
+    
     def find_address_object_name(self, ip):
         print(f"Searching for address object with IP: {ip}")
-                # Check if the input IP contains a range
+
+        # Check if the input IP contains a range
         if '-' in ip:
             ip_range = ip.split('-')
             start_ip, end_ip = ip_range[0], ip_range[1]
@@ -100,19 +124,21 @@ class PaloAuto:
             ip_addresses = [f"{start_prefix}.{i}" for i in range(start_num, end_num)]
             for object_ip in ip_addresses:
                 for obj in self.address_objects:
-                    object_ip_range = obj.get('ip-range', None)
-                    if object_ip_range and object_ip in object_ip_range:
+                    if 'ip-range' in obj and object_ip in obj['ip-range']:
                         return obj['@name']
             raise ValueError(f"No address object found for IP range: {ip}")
-        
+
         # Handle single IP address
         for obj in self.address_objects:
-            object_ip = obj['ip-netmask'].split('/')[0]
-            print(f"Checking address object with IP: {object_ip}")
-            print(f"Value of ip argument: {ip}")
-            if object_ip == ip:
-                return obj['@name']
+            if 'ip-netmask' in obj:
+                object_ip = obj['ip-netmask'].split('/')[0]
+                if object_ip == ip:
+                    return obj['@name']
+            elif 'ip-range' in obj:
+                if ip in obj['ip-range']:
+                    return obj['@name']
         raise ValueError(f"No address object found for IP: {ip}")
+
 
     def match_rule(self, source_ip, destination_ip, user_service):
         found_policy = False
@@ -252,8 +278,8 @@ class PaloAuto:
 # Example usage
 firewall_ip = '10.0.4.253'
 api_key = 'Basic cmVzdHVzZXI6QWExMjM0NTY='
-policy_name = "new_rule4"
-user_source_ip = "10.0.1.1"
+policy_name = "new_rule2"
+user_source_ip = "1.1.1.112"
 user_destination_ip = "8.8.8.8"
 user_service_value = 80
 user_application = "any"
@@ -266,12 +292,16 @@ user_application = "any"
 
 
 palo_auto = PaloAuto(firewall_ip, api_key)
-source_zone = palo_auto.find_zone_for_ip(user_source_ip)
 
+source_zone = palo_auto.find_zone_for_ip(user_source_ip)
 destination_zone = palo_auto.find_zone_for_ip(user_destination_ip)
-if destination_zone or source_zone is None:
+
+if destination_zone is None:
     destination_zone = "untrust"
+
+if source_zone is None:
     source_zone = "untrust"
+
 found_policy = palo_auto.match_rule(user_source_ip, user_destination_ip, user_service_value)
 
 if not found_policy:

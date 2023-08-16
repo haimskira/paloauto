@@ -2,7 +2,6 @@ import subprocess
 import requests
 import socket
 
-
 # Set firewall IP and API key
 firewall_ip = '10.0.4.253'
 api_key = 'Basic cmVzdHVzZXI6QWExMjM0NTY='
@@ -32,10 +31,11 @@ def resolve_dns_name(ip):
 for obj in address_objects:
     if 'ip-netmask' in obj and '@name' in obj:
         ip = obj['ip-netmask']
+        if '/' in ip:  # Remove prefix length (/24, /32, /any) if present
+            ip = ip.split('/')[0]
         resolved_name = resolve_dns_name(ip)
         if resolved_name:
             description = resolved_name
-            print("desc:" ,description)
             update_data = {
                 "entry": {
                     "@name": obj['@name'],
@@ -44,10 +44,7 @@ for obj in address_objects:
                     "ip-netmask": ip,
                     "description": description
                 }
-                
             }
-            print("update_url", update_data)
-            print("OBJ:::", obj['@name'])
             update_url = f"https://10.0.4.253/restapi/v10.1/Objects/Addresses?name={obj['@name']}&location=vsys&vsys=vsys1"
             response = requests.put(update_url, headers=headers, json=update_data, verify=False)
             if response.status_code == 200:
