@@ -163,7 +163,6 @@ class PaloAuto:
                 return True
         return False
 
-
     def get_service_key_by_value(self, service_value):
         for service in self.service_objects:
             if 'protocol' in service:
