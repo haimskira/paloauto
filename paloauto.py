@@ -87,14 +87,32 @@ class PaloAuto:
     
     def find_address_object_name(self, ip):
         print(f"Searching for address object with IP: {ip}")
+                # Check if the input IP contains a range
+        if '-' in ip:
+            ip_range = ip.split('-')
+            start_ip, end_ip = ip_range[0], ip_range[1]
+            start_octets = start_ip.split('.')
+            end_octets = end_ip.split('.')
+            start_prefix = '.'.join(start_octets[:-1])
+            end_prefix = '.'.join(end_octets[:-1])
+            start_num = int(start_octets[-1])
+            end_num = int(end_octets[-1]) + 1  # Add 1 to include the last IP in the range
+            ip_addresses = [f"{start_prefix}.{i}" for i in range(start_num, end_num)]
+            for object_ip in ip_addresses:
+                for obj in self.address_objects:
+                    object_ip_range = obj.get('ip-range', None)
+                    if object_ip_range and object_ip in object_ip_range:
+                        return obj['@name']
+            raise ValueError(f"No address object found for IP range: {ip}")
+        
+        # Handle single IP address
         for obj in self.address_objects:
             object_ip = obj['ip-netmask'].split('/')[0]
             print(f"Checking address object with IP: {object_ip}")
             print(f"Value of ip argument: {ip}")
             if object_ip == ip:
                 return obj['@name']
-        return None
-
+        raise ValueError(f"No address object found for IP: {ip}")
 
     def match_rule(self, source_ip, destination_ip, user_service):
         found_policy = False
@@ -102,37 +120,72 @@ class PaloAuto:
             if 'source' in rule and 'member' in rule['source'] and \
                'destination' in rule and 'member' in rule['destination'] and \
                'service' in rule and 'member' in rule['service']:
+
                 source_members = rule['source']['member']
                 destination_members = rule['destination']['member']
                 service_members = rule['service']['member']
 
-                if source_ip in [obj['ip-netmask'] for obj in self.address_objects if '@name' in obj and obj['@name'] in source_members] and \
-                    destination_ip in [obj['ip-netmask'] for obj in self.address_objects if '@name' in obj and obj['@name'] in destination_members]:
+                source_ips = [self.get_ip_from_member(member) for member in source_members]
+                destination_ips = [self.get_ip_from_member(member) for member in destination_members]
+
+                if self.is_ip_in_list(source_ip, source_ips) and self.is_ip_in_list(destination_ip, destination_ips):
                     for service_member in service_members:
                         if any(service_member in srv['@name'] for srv in self.service_objects):
                             print(f"Rule '{rule['@name']}' contains source IP '{source_ip}', destination IP '{destination_ip}', and matches service '{user_service}'.")
                             if 'to' in rule and 'member' in rule['to'] and 'from' in rule and 'member' in rule['from']:
                                 zones_to = rule['to']['member']
                                 zones_from = rule['from']['member']
-                                print(f"Source Zones: {', '.join(zones_from)}")
-                                print(f"Destination Zones: {', '.join(zones_to)}")
+                                # print(f"Source Zones: {', '.join(zones_from)}")
+                                # print(f"Destination Zones: {', '.join(zones_to)}")
                             found_policy = True
                             break
         return found_policy
 
+    def get_ip_from_member(self, member):
+        for obj in self.address_objects:
+            if '@name' in obj and obj['@name'] == member:
+                if 'ip-netmask' in obj:
+                    return obj['ip-netmask']
+                elif 'ip-range' in obj:
+                    return obj['ip-range']
+        return ""
+
+    def is_ip_in_list(self, ip, ip_list):
+        for ip_item in ip_list:
+            if '/' in ip_item:  # Check subnet
+                if ipaddress.IPv4Address(ip) in ipaddress.IPv4Network(ip_item, strict=False):
+                    return True
+            elif '-' in ip_item:  # Check range
+                start_ip, end_ip = ip_item.split('-')
+                if ipaddress.IPv4Address(start_ip) <= ipaddress.IPv4Address(ip) <= ipaddress.IPv4Address(end_ip):
+                    return True
+            elif ip == ip_item:  # Check single IP
+                return True
+        return False
+
+
     def get_service_key_by_value(self, service_value):
         for service in self.service_objects:
-            if 'protocol' in service and 'tcp' in service['protocol']:
-                ports = service['protocol']['tcp']['port'].split(',')
-                for port in ports:
-                    if int(port) == service_value:
-                        return service['@name']
-        return None
-
-    def get_address_object_by_ip(self, ip):
-        for obj in self.address_objects:
-            if 'ip-netmask' in obj and obj['ip-netmask'] == ip:
-                return obj['@name']
+            if 'protocol' in service:
+                protocol = service['protocol']
+                if 'tcp' in protocol and 'port' in protocol['tcp']:
+                    ports = protocol['tcp']['port'].split(',')
+                    for port in ports:
+                        if '-' in port:
+                            start_port, end_port = map(int, port.split('-'))
+                            if start_port <= service_value <= end_port:
+                                return service['@name']
+                        elif int(port) == service_value:
+                            return service['@name']
+                if 'udp' in protocol and 'port' in protocol['udp']:
+                    ports = protocol['udp']['port'].split(',')
+                    for port in ports:
+                        if '-' in port:
+                            start_port, end_port = map(int, port.split('-'))
+                            if start_port <= service_value <= end_port:
+                                return service['@name']
+                        elif int(port) == service_value:
+                            return service['@name']
         return None
 
     def post_security_rule(self, policy_name, source_zone, destination_zone, user_source_ip, user_destination_ip, user_service_value, user_application):
@@ -200,7 +253,7 @@ class PaloAuto:
 # Example usage
 firewall_ip = '10.0.4.253'
 api_key = 'Basic cmVzdHVzZXI6QWExMjM0NTY='
-policy_name = "new_rule2"
+policy_name = "new_rule4"
 user_source_ip = "10.0.1.1"
 user_destination_ip = "8.8.8.8"
 user_service_value = 80
