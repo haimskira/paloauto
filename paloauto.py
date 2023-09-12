@@ -79,7 +79,9 @@ class PaloAuto:
                     if 'ip' in unit and 'entry' in unit['ip'] and len(unit['ip']['entry']) > 0:
                         interface_ip = unit['ip']['entry'][0]['@name']
                         if '/' in interface_ip:
-                            subnet = ipaddress.IPv4Network(interface_ip, strict=False)
+                            interface_ip_parts = interface_ip.split('/')  # Split IP and prefix length
+                            subnet = ipaddress.IPv4Network(interface_ip_parts[0], strict=False)
+                
                             if '-' in ip:
                                 ip_range = ip.split('-')
                                 start_ip, end_ip = ip_range[0], ip_range[1]
@@ -130,30 +132,50 @@ class PaloAuto:
     def find_address_object_name(self, ip):
         print(f"Searching for address object with IP: {ip}")
     
-        # Check if the input IP contains a range
-        if '-' in ip:
+        if '/' in ip:  # Handle IP address with prefix
+            input_ip, prefix = ip.split('/')
+            prefix_length = int(prefix)
+            input_ip = ipaddress.IPv4Address(input_ip)
+            for obj in self.address_objects:
+                if 'ip-netmask' in obj:
+                    try:
+                        object_ip, object_prefix = obj['ip-netmask'].split('/')
+                        if input_ip == ipaddress.IPv4Address(object_ip) and prefix_length == int(object_prefix):
+                            return obj['@name']
+                    except ValueError:
+                        pass
+            raise ValueError(f"No address object found for IP: {ip}")
+    
+        if '-' in ip:  # Handle IP address range
             ip_range = ip.split('-')
             start_ip, end_ip = ip_range[0], ip_range[1]
             for obj in self.address_objects:
                 if 'ip-range' in obj:
-                    obj_start_ip, obj_end_ip = obj['ip-range'].split('-')
-                    if start_ip == obj_start_ip and end_ip == obj_end_ip:
-                        return obj['@name']
+                    try:
+                        obj_start_ip, obj_end_ip = obj['ip-range'].split('-')
+                        if start_ip == obj_start_ip and end_ip == obj_end_ip:
+                            return obj['@name']
+                    except ValueError:
+                        pass
             raise ValueError(f"No address object found for IP range: {ip}")
     
         # Handle single IP address
         for obj in self.address_objects:
             if 'ip-netmask' in obj:
-                object_ip = obj['ip-netmask'].split('/')[0]
-                if object_ip == ip:
-                    return obj['@name']
+                try:
+                    object_ip = obj['ip-netmask'].split('/')[0]
+                    if object_ip == ip:
+                        return obj['@name']
+                except ValueError:
+                    pass
             elif 'ip-range' in obj:
-                obj_start_ip, obj_end_ip = obj['ip-range'].split('-')
-                if obj_start_ip <= ip <= obj_end_ip:
-                    return obj['@name']
+                try:
+                    obj_start_ip, obj_end_ip = obj['ip-range'].split('-')
+                    if obj_start_ip <= ip <= obj_end_ip:
+                        return obj['@name']
+                except ValueError:
+                    pass
         raise ValueError(f"No address object found for IP: {ip}")
-
-
 
     def match_rule(self, source_ip, destination_ip, user_service):
         found_policy = False
@@ -180,7 +202,10 @@ class PaloAuto:
                                 # print(f"Destination Zones: {', '.join(zones_to)}")
                             found_policy = True
                             break
+            if found_policy:
+                break  # Exit the loop if a matching policy is found
         return found_policy
+
 
     def get_ip_from_member(self, member):
         for obj in self.address_objects:
@@ -190,19 +215,38 @@ class PaloAuto:
                 elif 'ip-range' in obj:
                     return obj['ip-range']
         return ""
-
+    
     def is_ip_in_list(self, ip, ip_list):
-        for ip_item in ip_list:
-            if '/' in ip_item:  # Check subnet
-                if ipaddress.IPv4Address(ip) in ipaddress.IPv4Network(ip_item, strict=False):
-                    return True
-            elif '-' in ip_item:  # Check range
-                start_ip, end_ip = ip_item.split('-')
-                if ipaddress.IPv4Address(start_ip) <= ipaddress.IPv4Address(ip) <= ipaddress.IPv4Address(end_ip):
-                    return True
-            elif ip == ip_item:  # Check single IP
-                return True
+        if '/' in ip:  # Subnet IP
+            ip_network = ipaddress.IPv4Network(ip, strict=False)
+            for list_ip in ip_list:
+                if '/' in list_ip:
+                    list_network = ipaddress.IPv4Network(list_ip, strict=False)
+                    if ip_network.overlaps(list_network):
+                        return True
+        elif '-' in ip:  # IP Range
+            ip_range = ip.split('-')
+            start_ip, end_ip = ip_range[0], ip_range[1]
+            start_ip_obj = ipaddress.IPv4Address(start_ip)
+            end_ip_obj = ipaddress.IPv4Address(end_ip)
+            for list_ip in ip_list:
+                if '-' in list_ip:
+                    list_range = list_ip.split('-')
+                    list_start_ip, list_end_ip = list_range[0], list_range[1]
+                    list_start_ip_obj = ipaddress.IPv4Address(list_start_ip)
+                    list_end_ip_obj = ipaddress.IPv4Address(list_end_ip)
+                    if start_ip_obj <= list_end_ip_obj and end_ip_obj >= list_start_ip_obj:
+                        return True
+        else:  # Single IP
+            input_ip = ipaddress.IPv4Address(ip)
+            for list_ip in ip_list:
+                if '/' not in list_ip and '-' not in list_ip:
+                    if input_ip == ipaddress.IPv4Address(list_ip):
+                        return True
+    
         return False
+
+
 
     def get_service_key_by_value(self, service_value):
         for service in self.service_objects:
@@ -293,9 +337,9 @@ class PaloAuto:
 # Example usage
 firewall_ip = '10.0.4.253'
 api_key = 'Basic cmVzdHVzZXI6QWExMjM0NTY='
-policy_name = "new_rule2"
-user_source_ip = "1.1.1.112/32"
-user_destination_ip = "8.8.8.8"
+policy_name = "new_ru"
+user_source_ip = "10.150.0.0/24"
+user_destination_ip = "10.145.76.144/32"
 user_service_value = 80
 user_application = "any"
 
